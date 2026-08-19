@@ -1,0 +1,80 @@
+{
+  "name": "EchoLink Gratitude Loop",
+  "nodes": [
+    {
+      "id": "webhook-gratitude",
+      "name": "Webhook: Gratitude Video",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "parameters": {
+        "path": "echolink-gratitude-video",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      },
+      "position": [240, 300]
+    },
+    {
+      "id": "split-paths",
+      "name": "Split Paths A/B",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const body = $input.item.json.body; return [{json:{path:'A', leads: body.pathA_unredeemed, campaignId: body.campaignId}},{json:{path:'B', leads: body.pathB_redeemed, campaignId: body.campaignId}}];"
+      },
+      "position": [460, 300]
+    },
+    {
+      "id": "wait-delay",
+      "name": "Wait / Delay 4h",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "parameters": {
+        "resume": "timeInterval",
+        "unit": "hours",
+        "value": 4
+      },
+      "position": [680, 300]
+    },
+    {
+      "id": "send-video-twilio",
+      "name": "Send Video Link via Twilio SMS",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "parameters": {
+        "operation": "send",
+        "from": "={{ $env.TWILIO_FROM_NUMBER }}",
+        "to": "={{ $json.leads[0]?.phone }}",
+        "message": "={{ $json.path === 'A' ? 'Thank you for joining! Unlock your reward: ' + $json.leads[0]?.videoPayload?.videoUrl : 'You redeemed your reward! Watch our exclusive video: ' + $json.leads[0]?.videoPayload?.videoUrl }}"
+      },
+      "position": [900, 300]
+    },
+    {
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":true}"
+      },
+      "position": [1120, 300]
+    }
+  ],
+  "connections": {
+    "Webhook: Gratitude Video": {
+      "main": [[{"node": "Split Paths A/B", "type": "main", "index": 0}]]
+    },
+    "Split Paths A/B": {
+      "main": [[{"node": "Wait / Delay 4h", "type": "main", "index": 0}]]
+    },
+    "Wait / Delay 4h": {
+      "main": [[{"node": "Send Video Link via Twilio SMS", "type": "main", "index": 0}]]
+    },
+    "Send Video Link via Twilio SMS": {
+      "main": [[{"node": "Respond OK", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

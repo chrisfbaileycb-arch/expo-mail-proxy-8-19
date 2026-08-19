@@ -1,0 +1,8 @@
+{
+  "name": "Expo Mail Proxy",
+  "description": "Local business customer engagement, short-form AI promotional video generator, interactive engagement games, dynamic in-store QR pipeline, and automated email rebooking hub.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

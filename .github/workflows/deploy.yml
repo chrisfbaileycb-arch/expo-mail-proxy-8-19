@@ -1,0 +1,89 @@
+name: echolink — Deploy
+
+# Manual deploy to Google Cloud Run.
+#   environment = staging  → builds the image (Cloud Build) and deploys it.
+#   environment = production → re-deploys the image already built for this
+#                              commit SHA (no rebuild — identical binary).
+# Service name follows expo-proxy-<environment>-echolink.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging, production]
+        default: staging
+
+permissions:
+  contents: read
+  id-token: write   # required for Workload Identity Federation
+
+jobs:
+  deploy:
+    name: build (staging) + deploy to Cloud Run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required repo secrets
+        env:
+          GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
+          GCP_REGION: ${{ secrets.GCP_REGION }}
+          GCP_WIP: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SA: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        run: |
+          missing=()
+          [ -n "$GCP_PROJECT" ] || missing+=("GCP_PROJECT")
+          [ -n "$GCP_REGION" ]  || missing+=("GCP_REGION")
+          [ -n "$GCP_WIP" ]     || missing+=("GCP_WORKLOAD_IDENTITY_PROVIDER")
+          [ -n "$GCP_SA" ]      || missing+=("GCP_SERVICE_ACCOUNT")
+          if [ ${#missing[@]} -ne 0 ]; then
+            echo "::error::Missing required repository secrets: ${missing[*]}"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build & push image (staging only)
+        if: ${{ inputs.environment == 'staging' }}
+        run: |
+          gcloud builds submit \
+            --project "${{ secrets.GCP_PROJECT }}" \
+            --region "${{ secrets.GCP_REGION }}" \
+            --config cloudbuild.yaml \
+            --substitutions=\
+          _TAG=${{ github.sha }},\
+          _REGION=${{ secrets.GCP_REGION }},\
+          _REPO=expo-proxy
+
+      - name: Deploy to Cloud Run
+        env:
+          PROJECT: ${{ secrets.GCP_PROJECT }}
+          REGION: ${{ secrets.GCP_REGION }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          SHA: ${{ github.sha }}
+        run: |
+          image="$REGION-docker.pkg.dev/$PROJECT/expo-proxy/echolink:$SHA"
+          gcloud run deploy "expo-proxy-$ENVIRONMENT-echolink" \
+            --project "$PROJECT" \
+            --region "$REGION" \
+            --image "$image" \
+            --platform managed \
+            --port 8080 \
+            --allow-unauthenticated \
+            --quiet
+          url="$(gcloud run services describe "expo-proxy-$ENVIRONMENT-echolink" \
+            --project "$PROJECT" --region "$REGION" --format 'value(status.url)')"
+          echo "## Deploy — $ENVIRONMENT" >> "$GITHUB_STEP_SUMMARY"
+          echo "echolink: $url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Reminder — runtime env vars
+        run: |
+          echo "::notice::Set runtime env vars (GOOGLE_CLIENT_IDS, N8N_BASE_URL, N8N_SIGNING_SECRET, DATA_DIR, GCP_PROJECT_ID, MARKETING_ORIGINS) on the service — it fails closed at boot without them. See the archived monorepo's BETA_READINESS.md."

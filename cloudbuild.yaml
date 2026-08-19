@@ -1,0 +1,33 @@
+# Cloud Build config — builds the echolink image and pushes it to
+# Artifact Registry. Invoked by the deploy workflow (staging only) or manually:
+#
+#   gcloud builds submit \
+#     --config cloudbuild.yaml \
+#     --substitutions=_TAG=$(git rev-parse HEAD),_REGION=us-central1,_REPO=expo-proxy
+#
+# Production deploys reuse the image already built for a given _TAG (commit SHA),
+# so staging and production run identical binaries.
+
+substitutions:
+  _REGION: us-central1
+  _REPO: expo-proxy
+  _TAG: latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 1200s
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    id: echolink
+    args:
+      - build
+      - -f
+      - apps/echolink/Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/echolink:${_TAG}
+      - .
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/echolink:${_TAG}

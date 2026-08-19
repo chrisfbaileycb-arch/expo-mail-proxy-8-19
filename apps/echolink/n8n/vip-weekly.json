@@ -1,0 +1,110 @@
+{
+  "name": "EchoLink VIP Weekly Segmenting",
+  "nodes": [
+    {
+      "id": "cron-sunday",
+      "name": "Cron Sunday 23:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 23 * * 0"
+            }
+          ]
+        }
+      },
+      "position": [240, 300]
+    },
+    {
+      "id": "fetch-csv",
+      "name": "Fetch Transaction CSV",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.CORE_PIPELINE_URL }}/export/transactions/csv",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headers": {
+          "parameters": [
+            {"name": "x-expoproxy-signature", "value": "={{ $env.N8N_SIGNING_SECRET }}"}
+          ]
+        }
+      },
+      "position": [460, 300]
+    },
+    {
+      "id": "ingest-transactions",
+      "name": "POST /ingest/transactions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ECHOLINK_URL }}/ingest/transactions",
+        "sendHeaders": true,
+        "headers": {
+          "parameters": [
+            {"name": "content-type", "value": "application/json"},
+            {"name": "x-expoproxy-signature", "value": "={{ $env.N8N_SIGNING_SECRET }}"}
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "csv", "value": "={{ $json.data }}"}
+          ]
+        }
+      },
+      "position": [680, 300]
+    },
+    {
+      "id": "run-segments",
+      "name": "POST /segments/run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ECHOLINK_URL }}/segments/run",
+        "sendHeaders": true,
+        "headers": {
+          "parameters": [
+            {"name": "authorization", "value": "Bearer {{ $env.GOOGLE_SERVICE_ACCOUNT_TOKEN }}"},
+            {"name": "x-expoproxy-ack", "value": "agentic-disclaimer-v1:segmentation_run"}
+          ]
+        }
+      },
+      "position": [900, 300]
+    },
+    {
+      "id": "notify-complete",
+      "name": "Log Segment Counts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const counts = $input.item.json.counts; console.log('VIP segmenting complete:', JSON.stringify(counts)); return $input.all();"
+      },
+      "position": [1120, 300]
+    }
+  ],
+  "connections": {
+    "Cron Sunday 23:00": {
+      "main": [[{"node": "Fetch Transaction CSV", "type": "main", "index": 0}]]
+    },
+    "Fetch Transaction CSV": {
+      "main": [[{"node": "POST /ingest/transactions", "type": "main", "index": 0}]]
+    },
+    "POST /ingest/transactions": {
+      "main": [[{"node": "POST /segments/run", "type": "main", "index": 0}]]
+    },
+    "POST /segments/run": {
+      "main": [[{"node": "Log Segment Counts", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

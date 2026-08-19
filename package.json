@@ -1,0 +1,26 @@
+{
+  "name": "echolink-standalone",
+  "version": "0.1.0",
+  "private": true,
+  "description": "EchoLink — gamified guest acquisition, VIP RFMD segmenting, slow-trickle drip campaigns, gratitude loop, and ordering redirection portal.",
+  "workspaces": [
+    "packages/shared",
+    "apps/echolink"
+  ],
+  "scripts": {
+    "dev": "tsx server.ts",
+    "start": "tsx server.ts",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run typecheck",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "dependencies": {
+    "@google/genai": "^2.17.1",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=20"
+  }
+}

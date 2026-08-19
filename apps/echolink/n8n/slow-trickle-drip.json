@@ -1,0 +1,96 @@
+{
+  "name": "EchoLink Slow-Trickle Drip",
+  "nodes": [
+    {
+      "id": "cron-daily",
+      "name": "Cron Daily 16:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 16 * * *"
+            }
+          ]
+        }
+      },
+      "position": [240, 300]
+    },
+    {
+      "id": "get-active-campaigns",
+      "name": "Get Active Campaign IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const campaignIds = ($env.DRIP_CAMPAIGN_IDS || '').split(',').filter(Boolean); return campaignIds.map(id => ({json:{campaignId:id}}));"
+      },
+      "position": [460, 300]
+    },
+    {
+      "id": "release-drip",
+      "name": "POST /campaigns/:id/release",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ECHOLINK_URL }}/campaigns/{{ $json.campaignId }}/release",
+        "sendHeaders": true,
+        "headers": {
+          "parameters": [
+            {"name": "content-type", "value": "application/json"},
+            {"name": "x-expoproxy-signature", "value": "={{ $env.N8N_SIGNING_SECRET }}"}
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "date", "value": "={{ $now.format('yyyy-MM-dd') }}"}
+          ]
+        }
+      },
+      "position": [680, 300]
+    },
+    {
+      "id": "send-sms-batch",
+      "name": "Send SMS Batch via Twilio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const batch = $input.item.json.batch || []; console.log(`Drip release: ${batch.length} leads for campaign ${$input.item.json.campaignId}`); return batch.map(lead => ({json:{to: lead.phone || lead.email, couponCode: lead.couponCode, videoUrl: lead.videoPayload?.videoUrl}}));"
+      },
+      "position": [900, 300]
+    },
+    {
+      "id": "twilio-sms",
+      "name": "Twilio SMS",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "parameters": {
+        "operation": "send",
+        "from": "={{ $env.TWILIO_FROM_NUMBER }}",
+        "to": "={{ $json.to }}",
+        "message": "Your exclusive offer: {{ $json.couponCode }}. Unlock your reward at {{ $json.videoUrl }}"
+      },
+      "position": [1120, 300]
+    }
+  ],
+  "connections": {
+    "Cron Daily 16:00": {
+      "main": [[{"node": "Get Active Campaign IDs", "type": "main", "index": 0}]]
+    },
+    "Get Active Campaign IDs": {
+      "main": [[{"node": "POST /campaigns/:id/release", "type": "main", "index": 0}]]
+    },
+    "POST /campaigns/:id/release": {
+      "main": [[{"node": "Send SMS Batch via Twilio", "type": "main", "index": 0}]]
+    },
+    "Send SMS Batch via Twilio": {
+      "main": [[{"node": "Twilio SMS", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

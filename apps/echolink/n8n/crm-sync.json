@@ -1,0 +1,82 @@
+{
+  "name": "EchoLink CRM Sync",
+  "nodes": [
+    {
+      "id": "webhook-crm",
+      "name": "Webhook: CRM Sync",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "parameters": {
+        "path": "echolink-crm-sync",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      },
+      "position": [240, 300]
+    },
+    {
+      "id": "verify-hmac",
+      "name": "Verify HMAC Signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const crypto = require('crypto'); const secret = $env.N8N_SIGNING_SECRET; const sig = $input.item.json.headers['x-expoproxy-signature'] || ''; const body = JSON.stringify($input.item.json.body); const expected = crypto.createHmac('sha256', secret).update(body).digest('hex'); if (sig !== expected) throw new Error('HMAC mismatch'); return $input.all();"
+      },
+      "position": [460, 300]
+    },
+    {
+      "id": "upsert-ghl",
+      "name": "Upsert GoHighLevel Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/contacts/upsert",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "goHighLevelApi",
+        "sendHeaders": true,
+        "headers": {
+          "parameters": [
+            {"name": "Version", "value": "2021-07-28"}
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "firstName", "value": "={{ $json.body.name?.split(' ')[0] }}"},
+            {"name": "lastName", "value": "={{ $json.body.name?.split(' ').slice(1).join(' ') }}"},
+            {"name": "phone", "value": "={{ $json.body.phone }}"},
+            {"name": "email", "value": "={{ $json.body.email }}"},
+            {"name": "source", "value": "={{ $json.body.source }}"},
+            {"name": "tags", "value": "={{ $json.body.isNew ? 'echolink-new' : 'echolink-repeat' }}"}
+          ]
+        }
+      },
+      "position": [680, 300]
+    },
+    {
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":true}"
+      },
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Webhook: CRM Sync": {
+      "main": [[{"node": "Verify HMAC Signature", "type": "main", "index": 0}]]
+    },
+    "Verify HMAC Signature": {
+      "main": [[{"node": "Upsert GoHighLevel Contact", "type": "main", "index": 0}]]
+    },
+    "Upsert GoHighLevel Contact": {
+      "main": [[{"node": "Respond OK", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
